@@ -75,6 +75,7 @@ int RUN_BIT = TRUE;
 /***************************************************************/
 uint32_t mem_read_32(uint32_t address)
 {
+    pipe.mem_stall = 50;
     int i;
     for (i = 0; i < MEM_NREGIONS; i++) {
         if (address >= MEM_REGIONS[i].start &&
@@ -92,6 +93,25 @@ uint32_t mem_read_32(uint32_t address)
     return 0;
 }
 
+uint32_t mem_read_32_inst(uint32_t address)
+{
+    pipe.fetch_stall = 50;
+    int i;
+    for (i = 0; i < MEM_NREGIONS; i++) {
+        if (address >= MEM_REGIONS[i].start &&
+                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
+            uint32_t offset = address - MEM_REGIONS[i].start;
+
+            return
+                (MEM_REGIONS[i].mem[offset+3] << 24) |
+                (MEM_REGIONS[i].mem[offset+2] << 16) |
+                (MEM_REGIONS[i].mem[offset+1] <<  8) |
+                (MEM_REGIONS[i].mem[offset+0] <<  0);
+        }
+    }
+
+    return 0;
+}
 /***************************************************************/
 /*                                                             */
 /* Procedure: mem_write_32                                     */
@@ -101,6 +121,7 @@ uint32_t mem_read_32(uint32_t address)
 /***************************************************************/
 void mem_write_32(uint32_t address, uint32_t value)
 {
+    pipe.mem_stall = 50;
     int i;
     for (i = 0; i < MEM_NREGIONS; i++) {
         if (address >= MEM_REGIONS[i].start &&

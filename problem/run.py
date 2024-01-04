@@ -73,6 +73,8 @@ def run(i):
     cmds += b"\ngo\nrdump\nquit\n"
     (r, r_err) = refproc.communicate(input=cmds)
     (s, s_err) = simproc.communicate(input=cmds)
+    with open("sim.out", "wb") as f:
+        f.write(s)
 
     return filter_stats(r.decode('utf-8')), filter_stats(s.decode('utf-8'))
 

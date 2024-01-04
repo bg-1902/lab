@@ -35,6 +35,7 @@ void pipe_init()
 {
     memset(&pipe, 0, sizeof(Pipe_State));
     pipe.PC = 0x00400000;
+    pipe.fetching = 0;
 }
 
 void pipe_cycle()
@@ -667,21 +668,42 @@ void pipe_stage_decode()
 
 void pipe_stage_fetch()
 {
+    // #ifdef DEBUG
+    // printf("DEBUG: in fetch stage...\n");
+    // #endif
     /* if pipeline is stalled (our output slot is not empty), return */
     if (pipe.decode_op != NULL)
         return;
-
+    //TRY FETCH, stall till necessary
+    if (!pipe.fetching) {
+        #ifdef DEBUG
+        printf("DEBUG::FETCH: start fetching!\n");
+        #endif
+        pipe.fetched_instr = mem_read_32_inst(pipe.PC);
+        pipe.fetching = TRUE;
+        return;
+    } else {
+        if(pipe.fetch_stall > 0) {
+            #ifdef DEBUG
+            printf("DEBUG::FETCH: waiting for fetch stall\n");
+            #endif
+            pipe.fetch_stall--;
+            return;
+        }
+    }
     /* Allocate an op and send it down the pipeline. */
     Pipe_Op *op = malloc(sizeof(Pipe_Op));
     memset(op, 0, sizeof(Pipe_Op));
     op->reg_src1 = op->reg_src2 = op->reg_dst = -1;
 
-    op->instruction = mem_read_32(pipe.PC);
+    op->instruction = pipe.fetched_instr;
+    
     op->pc = pipe.PC;
     pipe.decode_op = op;
 
     /* update PC */
     pipe.PC += 4;
+    pipe.fetching = FALSE;
 
     stat_inst_fetch++;
 }

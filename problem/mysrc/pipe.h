@@ -89,6 +89,12 @@ typedef struct Pipe_State {
     int multiplier_stall; /* number of remaining cycles until HI/LO are ready */
 
     /* place other information here as necessary */
+    int mem_stall;
+    int fetch_stall;
+
+    int fetching;
+    uint32_t fetched_instr;
+    
 
 } Pipe_State;
 

@@ -23,6 +23,7 @@ extern int RUN_BIT;	/* run bit */
 
 /* only the cache touches these functions */
 uint32_t mem_read_32(uint32_t address);
+uint32_t mem_read_32_inst(uint32_t address);
 void     mem_write_32(uint32_t address, uint32_t value);
 
 /* statistics */
