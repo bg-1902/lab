@@ -18,6 +18,7 @@
 
 #include "shell.h"
 #include "pipe.h"
+#include "cache.h"
 
 /***************************************************************/
 /* Statistics.                                                 */
@@ -41,13 +42,6 @@ uint32_t stat_squash = 0;
 #define MEM_KTEXT_START 0x80000000
 #define MEM_KTEXT_SIZE  0x00100000
 
-#define ICACHE_SET_SIZE 64
-#define ICACHE_N_WAYS 4
-
-#define DIRTY_MISS 0b10
-#define CLEAN_MISS 0b01
-#define HIT 0b00
-
 typedef struct {
     uint32_t start, size;
     uint8_t *mem;
@@ -65,6 +59,7 @@ mem_region_t MEM_REGIONS[] = {
 #define MEM_NREGIONS (sizeof(MEM_REGIONS)/sizeof(mem_region_t))
 
 int RUN_BIT = TRUE;
+cache_mem_t* icache;
 
 /***************************************************************/
 /*                                                             */
@@ -92,25 +87,27 @@ uint32_t mem_read_32(uint32_t address)
 
     return 0;
 }
-
+/***************************************************************/
+/*                                                             */
+/* Procedure: mem_read_32_inst                                 */
+/*                                                             */
+/* Purpose: Read a 32-bit instruction from instruction cache   */
+/*                                                             */
+/***************************************************************/
 uint32_t mem_read_32_inst(uint32_t address)
 {
     pipe.fetch_stall = 50;
-    int i;
-    for (i = 0; i < MEM_NREGIONS; i++) {
-        if (address >= MEM_REGIONS[i].start &&
-                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
-            uint32_t offset = address - MEM_REGIONS[i].start;
-
-            return
-                (MEM_REGIONS[i].mem[offset+3] << 24) |
-                (MEM_REGIONS[i].mem[offset+2] << 16) |
-                (MEM_REGIONS[i].mem[offset+1] <<  8) |
-                (MEM_REGIONS[i].mem[offset+0] <<  0);
-        }
+    int status = read_cache(icache, address);
+    if(status == HIT) {
+        pipe.fetch_stall = 0;
+    } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
+        pipe.fetch_stall = 50;
+    } else {
+        printf("ERROR: invalid status from read_cache! \n");
+        return 0;
     }
 
-    return 0;
+    return icache->out_data;
 }
 /***************************************************************/
 /*                                                             */
@@ -393,6 +390,7 @@ void initialize(char *program_filename, int num_prog_files) {
   int i;
 
   init_memory();
+
   pipe_init();
   for ( i = 0; i < num_prog_files; i++ ) {
     load_program(program_filename);
@@ -402,29 +400,12 @@ void initialize(char *program_filename, int num_prog_files) {
   RUN_BIT = TRUE;
 }
 
-typedef struct {
-    uint8_t valid;
-    uint8_t dirty;
-    uint32_t tag;
-    uint8_t lru_sum;
-    uint8_t mem[32];
-} way_elem_t;
-
-typedef struct {
-    way_elem_t mem_elems[ICACHE_N_WAYS];
-} set_elem_t;
-
-typedef struct {
-    set_elem_t sets[ICACHE_SET_SIZE];
-    uint8_t out_data;
-} cache_mem_t;
-
-
-void init_cache(cache_mem_t* cache_inst){
+void init_cache(){
+    icache = malloc(sizeof(cache_mem_t));
     uint8_t i = 0;
     for(i = 0; i  < ICACHE_SET_SIZE; i++) {
         //cache_inst->sets[i].mem_elems = malloc(ICACHE_N_WAYS*sizeof(way_elem_t));
-        memset(cache_inst->sets[i].mem_elems, 0, ICACHE_N_WAYS*sizeof(way_elem_t));
+        memset(icache->sets[i].mem_elems, 0, ICACHE_N_WAYS*sizeof(way_elem_t));
     }
 }
 
@@ -483,7 +464,11 @@ uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr) {
     for(i = 0; i < 4; i++) {
         // if valid and tag match 
         if ( (set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].tag == tag)) {
-            cache_inst->out_data = set_i->mem_elems[i].mem[block_offset];
+            cache_inst->out_data = 
+                (set_i->mem_elems[i].mem[block_offset+3] << 24) |
+                (set_i->mem_elems[i].mem[block_offset+2] << 16) |
+                (set_i->mem_elems[i].mem[block_offset+1] <<  8) |
+                (set_i->mem_elems[i].mem[block_offset+0] <<  0);
             status = HIT;
             return status;
         }
@@ -508,7 +493,11 @@ uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr) {
             }
             
             mem_read_block(set_i->mem_elems[i].mem, addr);
-            cache_inst->out_data = set_i->mem_elems[i].mem[block_offset];
+            cache_inst->out_data = 
+                (set_i->mem_elems[i].mem[block_offset+3] << 24) |
+                (set_i->mem_elems[i].mem[block_offset+2] << 16) |
+                (set_i->mem_elems[i].mem[block_offset+1] <<  8) |
+                (set_i->mem_elems[i].mem[block_offset+0] <<  0);
             set_i->mem_elems[i].dirty = 0;
             set_i->mem_elems[i].valid = 1;
             set_i->mem_elems[i].tag = tag;
@@ -605,7 +594,13 @@ int main(int argc, char *argv[]) {
 
   printf("MIPS Simulator\n\n");
 
+  init_cache();
+
   initialize(argv[1], argc - 1);
+
+//   uint32_t PC = 0x00400000;
+//   int status = read_cache(icache, PC);
+//   printf("data from cache: 0x%04x with status %d\n", icache->out_data, status);
 
   while (1)
     get_command();
