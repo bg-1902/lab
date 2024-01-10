@@ -60,6 +60,7 @@ mem_region_t MEM_REGIONS[] = {
 
 int RUN_BIT = TRUE;
 cache_mem_t* icache;
+d_cache_mem_t* dcache;
 
 /***************************************************************/
 /*                                                             */
@@ -451,6 +452,77 @@ void mem_write_block(uint8_t* block_mem, uint32_t addr) {
     printf("address not found! \n");
 }
 
+uint8_t d_read_cache(d_cache_mem_t* cache_inst, uint32_t addr) {
+    uint8_t status = 3;
+    uint32_t set_no = (addr & 0x1FE0) >> 5;
+    printf("set_no: %d \n", set_no);
+    uint8_t block_offset = (addr & 0x1f);
+    uint32_t tag = (addr & 0xffffe000) >> 13;
+    d_set_elem_t* set_i = &(cache_inst->sets[set_no]);
+    
+    uint8_t i = 0;
+    // HIT 
+    for(i = 0; i < 8; i++) {
+        // if valid and tag match 
+        if ( (set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].tag == tag)) {
+            cache_inst->out_data = 
+                (set_i->mem_elems[i].mem[block_offset+3] << 24) |
+                (set_i->mem_elems[i].mem[block_offset+2] << 16) |
+                (set_i->mem_elems[i].mem[block_offset+1] <<  8) |
+                (set_i->mem_elems[i].mem[block_offset+0] <<  0);
+            for(uint8_t n = 0; n < 8; n++){
+                if(set_i->mem_elems[n].lru_sum > 0){
+                    set_i->mem_elems[n].lru_sum -= 1;
+                } 
+            } 
+            set_i->mem_elems[i].lru_sum = 7;
+            status = HIT;
+            return status;
+        }
+    }
+
+    // MISS
+    for(uint8_t i = 0; i < 8; i++) {
+        if(set_i->mem_elems[i].lru_sum == 0){
+            printf("replacing way %d \n", i);
+            uint32_t block_addr = ((set_i->mem_elems[i].tag << 13) | (set_no << 5));
+            // IF VALID and DIRTY, WRITEBACK TO MEMORY
+            if((set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].dirty == 1)) {
+                printf("VALID and DIRTY block!, writing back to address %x \n", block_addr);
+                mem_write_block(set_i->mem_elems[i].mem, block_addr);
+                status = DIRTY_MISS;
+            } else if((set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].dirty == 0)) {
+                printf("VALID and CLEAN block!, will not write back to address %x \n", block_addr);
+                status = CLEAN_MISS;
+            } else {
+                printf("INVALID block!, will not write back to %x \n", block_addr);
+                status = CLEAN_MISS;
+            }
+            
+            mem_read_block(set_i->mem_elems[i].mem, addr);
+            cache_inst->out_data = 
+                (set_i->mem_elems[i].mem[block_offset+3] << 24) |
+                (set_i->mem_elems[i].mem[block_offset+2] << 16) |
+                (set_i->mem_elems[i].mem[block_offset+1] <<  8) |
+                (set_i->mem_elems[i].mem[block_offset+0] <<  0);
+            set_i->mem_elems[i].dirty = 0;
+            set_i->mem_elems[i].valid = 1;
+            set_i->mem_elems[i].tag = tag;
+            for(uint8_t n = 0; n < 8; n++){
+                if(set_i->mem_elems[n].lru_sum > 0){
+                    set_i->mem_elems[n].lru_sum -= 1;
+                } 
+            } 
+            set_i->mem_elems[i].lru_sum = 7;
+
+            break;
+        }
+    }
+    return status;
+
+    return 0;
+}
+
 uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr) {
     uint8_t status = 3;
     uint32_t set_no = (addr & 0x7E0) >> 5;
@@ -469,6 +541,13 @@ uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr) {
                 (set_i->mem_elems[i].mem[block_offset+2] << 16) |
                 (set_i->mem_elems[i].mem[block_offset+1] <<  8) |
                 (set_i->mem_elems[i].mem[block_offset+0] <<  0);
+
+            for(uint8_t n = 0; n < 4; n++){
+                if(set_i->mem_elems[n].lru_sum > 0){
+                    set_i->mem_elems[n].lru_sum -= 1;
+                } 
+            } 
+            set_i->mem_elems[i].lru_sum = 3;
             status = HIT;
             return status;
         }
@@ -515,6 +594,7 @@ uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr) {
 
     return 0;
 }
+
 
 uint8_t write_cache(cache_mem_t* cache_inst, uint32_t addr, uint8_t val) {
     uint8_t status = 3;
@@ -571,6 +651,69 @@ uint8_t write_cache(cache_mem_t* cache_inst, uint32_t addr, uint8_t val) {
                 } 
             } 
             set_i->mem_elems[i].lru_sum = 3;
+
+            break;
+        }
+    }
+    return status;
+}
+
+
+uint8_t d_write_cache(d_cache_mem_t* cache_inst, uint32_t addr, uint8_t val) {
+    uint8_t status = 3;
+
+    uint32_t set_no = (addr & 0x1FE0) >> 5;
+    printf("set_no: %d \n", set_no);
+    uint8_t block_offset = (addr & 0x1f);
+    uint32_t tag = (addr & 0xffffe000) >> 13;
+    d_set_elem_t* set_i = &(cache_inst->sets[set_no]);
+    // HIT
+    for(uint8_t i = 0; i < 8; i++) {
+        if ( (set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].tag == tag)){
+            uint8_t lru_n = set_i->mem_elems[i].lru_sum;
+            set_i->mem_elems[i].mem[block_offset] = val;
+            for(uint8_t n = 0; n < 8; n++){
+                if(set_i->mem_elems[n].lru_sum > lru_n){
+                    set_i->mem_elems[n].lru_sum -= 1;
+                } 
+            } 
+            set_i->mem_elems[i].lru_sum = 8;
+            set_i->mem_elems[i].dirty = 1;
+
+            status = HIT;
+            return status;
+        }
+    }
+    
+    // MISS
+    for(uint8_t i = 0; i < 8; i++) {
+        if(set_i->mem_elems[i].lru_sum == 0){
+            printf("replacing way %d \n", i);
+            uint32_t block_addr = ((set_i->mem_elems[i].tag << 13) | (set_no << 5));
+            // IF VALID and DIRTY, WRITEBACK TO MEMORY
+            if((set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].dirty == 1)) {
+                printf("VALID and DIRTY block!, writing back to address %x \n", block_addr);
+                mem_write_block(set_i->mem_elems[i].mem, block_addr);
+                status = DIRTY_MISS;
+            } else if((set_i->mem_elems[i].valid == 1) && (set_i->mem_elems[i].dirty == 0)) {
+                printf("VALID and CLEAN block!, will not write back to address %x \n", block_addr);
+                status = CLEAN_MISS;
+            } else {
+                printf("INVALID block!, will not write back to %x \n", block_addr);
+                status = CLEAN_MISS;
+            }
+            
+            mem_read_block(set_i->mem_elems[i].mem, addr);
+            set_i->mem_elems[i].mem[block_offset] = val;
+            set_i->mem_elems[i].dirty = 1;
+            set_i->mem_elems[i].valid = 1;
+            set_i->mem_elems[i].tag = tag;
+            for(uint8_t n = 0; n < 8; n++){
+                if(set_i->mem_elems[n].lru_sum > 0){
+                    set_i->mem_elems[n].lru_sum -= 1;
+                } 
+            } 
+            set_i->mem_elems[i].lru_sum = 7;
 
             break;
         }

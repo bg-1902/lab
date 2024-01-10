@@ -674,17 +674,21 @@ void pipe_stage_fetch()
     // printf("DEBUG: in fetch stage...\n");
     // #endif
     /* if pipeline is stalled (our output slot is not empty), return */
+    
+
+    if(RUN_BIT == 0) {
+        pipe.PC += 4; return;
+    }
+    
     if (pipe.decode_op != NULL)
         return;
     //TRY FETCH, stall till necessary
-    pipe.fetched_instr = mem_read_32_inst(pipe.PC);
-
-    if (!pipe.fetching && pipe.fetch_stall > 0) {
-        #ifdef DEBUG
-        printf("DEBUG::FETCH: start fetching!\n");
-        #endif
+    if(!pipe.fetching) {
+        pipe.fetched_instr = mem_read_32_inst(pipe.PC);
         pipe.fetching = TRUE;
-    } else if (pipe.fetch_stall > 0) {
+    }
+
+    if (pipe.fetch_stall > 0) {
         #ifdef DEBUG
         printf("DEBUG::FETCH: waiting for fetch stall\n");
         #endif

@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-//#define DEBUG
+#define DEBUG
 
 /* debug */
 void print_op(Pipe_Op *op)

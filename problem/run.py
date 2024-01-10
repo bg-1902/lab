@@ -76,6 +76,9 @@ def run(i):
     with open("sim.out", "wb") as f:
         f.write(s)
 
+
+    with open("basesim.out", "wb") as f:
+        f.write(r)
     return filter_stats(r.decode('utf-8')), filter_stats(s.decode('utf-8'))
 
 
