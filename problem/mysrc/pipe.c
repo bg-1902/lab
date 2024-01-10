@@ -675,21 +675,19 @@ void pipe_stage_fetch()
     if (pipe.decode_op != NULL)
         return;
     //TRY FETCH, stall till necessary
-    if (!pipe.fetching) {
+    pipe.fetched_instr = mem_read_32_inst(pipe.PC);
+
+    if (!pipe.fetching && pipe.fetch_stall > 0) {
         #ifdef DEBUG
         printf("DEBUG::FETCH: start fetching!\n");
         #endif
-        pipe.fetched_instr = mem_read_32_inst(pipe.PC);
         pipe.fetching = TRUE;
+    } else if (pipe.fetch_stall > 0) {
+        #ifdef DEBUG
+        printf("DEBUG::FETCH: waiting for fetch stall\n");
+        #endif
+        pipe.fetch_stall--;
         return;
-    } else {
-        if(pipe.fetch_stall > 0) {
-            #ifdef DEBUG
-            printf("DEBUG::FETCH: waiting for fetch stall\n");
-            #endif
-            pipe.fetch_stall--;
-            return;
-        }
     }
     /* Allocate an op and send it down the pipeline. */
     Pipe_Op *op = malloc(sizeof(Pipe_Op));
