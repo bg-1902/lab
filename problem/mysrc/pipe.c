@@ -36,6 +36,8 @@ void pipe_init()
     memset(&pipe, 0, sizeof(Pipe_State));
     pipe.PC = 0x00400000;
     pipe.fetching = 0;
+
+    printf("Starting Pipeline\n");
 }
 
 void pipe_cycle()
