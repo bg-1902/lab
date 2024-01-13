@@ -40,5 +40,6 @@ typedef struct {
 extern cache_mem_t* icache;
 extern d_cache_mem_t* dcache;
 
-uint8_t read_d_cache(d_cache_mem_t* cache_inst, uint32_t addr);
+uint8_t d_read_cache(d_cache_mem_t* cache_inst, uint32_t addr);
 uint8_t read_cache(cache_mem_t* cache_inst, uint32_t addr);
+uint8_t d_write_cache(d_cache_mem_t* cache_inst, uint32_t addr, uint8_t data); 

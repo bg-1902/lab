@@ -75,6 +75,15 @@ def run(i):
     (s, s_err) = simproc.communicate(input=cmds)
     with open("sim.out", "wb") as f:
         f.write(s)
+    
+    with open("sim.err", "wb") as f:
+        f.write(s_err)
+
+    with open("basesim.err", "wb") as f:
+        f.write(r_err)
+    
+    with open("basesim.out", "wb") as f:
+        f.write(r)
 
 
     with open("basesim.out", "wb") as f:

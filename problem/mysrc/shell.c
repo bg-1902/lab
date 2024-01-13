@@ -72,21 +72,17 @@ d_cache_mem_t* dcache;
 uint32_t mem_read_32(uint32_t address)
 {
     pipe.mem_stall = 50;
-    int i;
-    for (i = 0; i < MEM_NREGIONS; i++) {
-        if (address >= MEM_REGIONS[i].start &&
-                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
-            uint32_t offset = address - MEM_REGIONS[i].start;
-
-            return
-                (MEM_REGIONS[i].mem[offset+3] << 24) |
-                (MEM_REGIONS[i].mem[offset+2] << 16) |
-                (MEM_REGIONS[i].mem[offset+1] <<  8) |
-                (MEM_REGIONS[i].mem[offset+0] <<  0);
-        }
+    int status = d_read_cache(dcache, address);
+    if(status == HIT) {
+        pipe.fetch_stall = 0;
+    } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
+        pipe.fetch_stall = 50;
+    } else {
+        printf("ERROR: invalid status from read_cache! \n");
+        return 0;
     }
 
-    return 0;
+    return icache->out_data;
 }
 /***************************************************************/
 /*                                                             */
@@ -120,19 +116,23 @@ uint32_t mem_read_32_inst(uint32_t address)
 void mem_write_32(uint32_t address, uint32_t value)
 {
     pipe.mem_stall = 50;
-    int i;
-    for (i = 0; i < MEM_NREGIONS; i++) {
-        if (address >= MEM_REGIONS[i].start &&
-                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
-            uint32_t offset = address - MEM_REGIONS[i].start;
-
-            MEM_REGIONS[i].mem[offset+3] = (value >> 24) & 0xFF;
-            MEM_REGIONS[i].mem[offset+2] = (value >> 16) & 0xFF;
-            MEM_REGIONS[i].mem[offset+1] = (value >>  8) & 0xFF;
-            MEM_REGIONS[i].mem[offset+0] = (value >>  0) & 0xFF;
-            return;
-        }
+    
+    int status = d_write_cache(dcache, address, (uint8_t)(value & 0xff));
+    (void)d_write_cache(dcache, address+1, (uint8_t)((value >> 8) & 0xff));
+    (void)d_write_cache(dcache, address+2, (uint8_t)((value >> 16) & 0xff));
+    (void)d_write_cache(dcache, address+3, (uint8_t)((value >> 24) & 0xff));
+    
+     
+    if(status == HIT) {
+        pipe.mem_stall = 0;
+    } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
+        pipe.mem_stall = 50;
+    } else {
+        printf("ERROR: invalid status from read_cache! \n");
+        return;
     }
+
+    return;
 }
 
 /***************************************************************/
@@ -350,6 +350,22 @@ void init_memory() {
     }
 }
 
+void mem_write_32_load(uint32_t address, uint32_t value)
+{
+    int i;
+    for (i = 0; i < MEM_NREGIONS; i++) {
+        if (address >= MEM_REGIONS[i].start &&
+                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
+            uint32_t offset = address - MEM_REGIONS[i].start;
+
+            MEM_REGIONS[i].mem[offset+3] = (value >> 24) & 0xFF;
+            MEM_REGIONS[i].mem[offset+2] = (value >> 16) & 0xFF;
+            MEM_REGIONS[i].mem[offset+1] = (value >>  8) & 0xFF;
+            MEM_REGIONS[i].mem[offset+0] = (value >>  0) & 0xFF;
+            return;
+        }
+    }
+}
 /**************************************************************/
 /*                                                            */
 /* Procedure : load_program                                   */
@@ -372,7 +388,7 @@ void load_program(char *program_filename) {
 
   ii = 0;
   while (fscanf(prog, "%x\n", &word) != EOF) {
-    mem_write_32(MEM_TEXT_START + ii, word);
+    mem_write_32_load(MEM_TEXT_START + ii, word);
     ii += 4;
   }
 
@@ -407,6 +423,15 @@ void init_cache(){
     for(i = 0; i  < ICACHE_SET_SIZE; i++) {
         //cache_inst->sets[i].mem_elems = malloc(ICACHE_N_WAYS*sizeof(way_elem_t));
         memset(icache->sets[i].mem_elems, 0, ICACHE_N_WAYS*sizeof(way_elem_t));
+    }
+}
+
+void d_init_cache(){
+    dcache = malloc(sizeof(d_cache_mem_t));
+    uint16_t i = 0;
+    for(i = 0; i  < DCACHE_SET_SIZE; i++) {
+        //cache_inst->sets[i].mem_elems = malloc(ICACHE_N_WAYS*sizeof(way_elem_t));
+        memset(dcache->sets[i].mem_elems, 0, DCACHE_N_WAYS*sizeof(way_elem_t));
     }
 }
 
@@ -677,7 +702,7 @@ uint8_t d_write_cache(d_cache_mem_t* cache_inst, uint32_t addr, uint8_t val) {
                     set_i->mem_elems[n].lru_sum -= 1;
                 } 
             } 
-            set_i->mem_elems[i].lru_sum = 8;
+            set_i->mem_elems[i].lru_sum = 7;
             set_i->mem_elems[i].dirty = 1;
 
             status = HIT;
@@ -738,6 +763,7 @@ int main(int argc, char *argv[]) {
   printf("MIPS Simulator\n\n");
 
   init_cache();
+  d_init_cache();
 
   initialize(argv[1], argc - 1);
 
