@@ -1,0 +1,198 @@
+diff --git a/problem/mysrc/pipe.c b/problem/mysrc/pipe.c
+index b6038c4..787f6b5 100755
+--- a/problem/mysrc/pipe.c
++++ b/problem/mysrc/pipe.c
+@@ -75,7 +75,7 @@ void pipe_cycle()
+             pipe.execute_op = NULL;
+         }
+ 
+-        if (pipe.branch_flush >= 4) {
++       if (pipe.branch_flush >= 4) {
+             if (pipe.mem_op) free(pipe.mem_op);
+             pipe.mem_op = NULL;
+         }
+@@ -141,6 +141,7 @@ void pipe_stage_wb()
+ void pipe_stage_mem()
+ {
+     /* if there is no instruction in this pipeline stage, we are done */
++    printf("Entered mem");
+     if (!pipe.mem_op)
+         return;
+ 
+@@ -148,16 +149,26 @@ void pipe_stage_mem()
+     Pipe_Op *op = pipe.mem_op;
+ 
+     uint32_t val = 0;
+-    if (op->is_mem)
+-        val = mem_read_32(op->mem_addr & ~3);
++    // if (op->is_mem)
++    //     val = mem_read_32(op->mem_addr & ~3);
+ 
+     switch (op->opcode) {
++        // case 
+         case OP_LW:
+         case OP_LH:
+         case OP_LHU:
+         case OP_LB:
+         case OP_LBU:
+             {
++                if(pipe.mem_stall > 0){ 
++                    pipe.mem_stall--;
++                    return;
++                } else {
++                    val = mem_read_32(op->mem_addr & ~3);
++                    if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
++                }
++
++
+                 /* extract needed value */
+                 op->reg_dst_value_ready = 1;
+                 if (op->opcode == OP_LW) {
+@@ -206,7 +217,13 @@ void pipe_stage_mem()
+                 case 3: val = (val & 0x00FFFFFF) | ((op->mem_value & 0xFF) << 24); break;
+             }
+ 
+-            mem_write_32(op->mem_addr & ~3, val);
++            if(pipe.mem_stall > 0){
++                pipe.mem_stall--;
++                return;
++            } else{
++                mem_write_32(op->mem_addr & ~3, val);
++                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
++            }
+             break;
+ 
+         case OP_SH:
+@@ -221,12 +238,26 @@ void pipe_stage_mem()
+             printf("new word %08x\n", val);
+ #endif
+ 
+-            mem_write_32(op->mem_addr & ~3, val);
++            if(pipe.mem_stall > 0){
++                pipe.mem_stall--;
++                return;
++            } else{
++                mem_write_32(op->mem_addr & ~3, val);
++                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
++            }
+             break;
+ 
+         case OP_SW:
+             val = op->mem_value;
+-            mem_write_32(op->mem_addr & ~3, val);
++
++            if(pipe.mem_stall > 0){
++                pipe.mem_stall--;
++                return;
++            } else{
++                mem_write_32(op->mem_addr & ~3, val);
++                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
++            }
++
+             break;
+     }
+ 
+diff --git a/problem/mysrc/shell.c b/problem/mysrc/shell.c
+index ffede45..c9dc5ce 100755
+--- a/problem/mysrc/shell.c
++++ b/problem/mysrc/shell.c
+@@ -72,21 +72,17 @@ d_cache_mem_t* dcache;
+ uint32_t mem_read_32(uint32_t address)
+ {
+     pipe.mem_stall = 50;
+-    int i;
+-    for (i = 0; i < MEM_NREGIONS; i++) {
+-        if (address >= MEM_REGIONS[i].start &&
+-                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
+-            uint32_t offset = address - MEM_REGIONS[i].start;
+-
+-            return
+-                (MEM_REGIONS[i].mem[offset+3] << 24) |
+-                (MEM_REGIONS[i].mem[offset+2] << 16) |
+-                (MEM_REGIONS[i].mem[offset+1] <<  8) |
+-                (MEM_REGIONS[i].mem[offset+0] <<  0);
+-        }
++    int status = d_read_cache(dcache, address);
++    if(status == HIT) {
++        pipe.fetch_stall = 0;
++    } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
++        pipe.fetch_stall = 50;
++    } else {
++        printf("ERROR: invalid status from read_cache! \n");
++        return 0;
+     }
+ 
+-    return 0;
++    return icache->out_data;
+ }
+ /***************************************************************/
+ /*                                                             */
+@@ -120,19 +116,23 @@ uint32_t mem_read_32_inst(uint32_t address)
+ void mem_write_32(uint32_t address, uint32_t value)
+ {
+     pipe.mem_stall = 50;
+-    int i;
+-    for (i = 0; i < MEM_NREGIONS; i++) {
+-        if (address >= MEM_REGIONS[i].start &&
+-                address < (MEM_REGIONS[i].start + MEM_REGIONS[i].size)) {
+-            uint32_t offset = address - MEM_REGIONS[i].start;
+-
+-            MEM_REGIONS[i].mem[offset+3] = (value >> 24) & 0xFF;
+-            MEM_REGIONS[i].mem[offset+2] = (value >> 16) & 0xFF;
+-            MEM_REGIONS[i].mem[offset+1] = (value >>  8) & 0xFF;
+-            MEM_REGIONS[i].mem[offset+0] = (value >>  0) & 0xFF;
+-            return;
+-        }
++    
++    int status = d_write_cache(dcache, address, (uint8_t)(value & 0xff));
++    (void)d_write_cache(dcache, address+1, (uint8_t)((value >> 8) & 0xff));
++    (void)d_write_cache(dcache, address+2, (uint8_t)((value >> 16) & 0xff));
++    (void)d_write_cache(dcache, address+3, (uint8_t)((value >> 24) & 0xff));
++    
++     
++    if(status == HIT) {
++        pipe.mem_stall = 0;
++    } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
++        pipe.mem_stall = 50;
++    } else {
++        printf("ERROR: invalid status from read_cache! \n");
++        return;
+     }
++
++    return;
+ }
+ 
+ /***************************************************************/
+@@ -410,6 +410,15 @@ void init_cache(){
+     }
+ }
+ 
++void d_init_cache(){
++    dcache = malloc(sizeof(d_cache_mem_t));
++    uint16_t i = 0;
++    for(i = 0; i  < DCACHE_SET_SIZE; i++) {
++        //cache_inst->sets[i].mem_elems = malloc(ICACHE_N_WAYS*sizeof(way_elem_t));
++        memset(dcache->sets[i].mem_elems, 0, DCACHE_N_WAYS*sizeof(way_elem_t));
++    }
++}
++
+ void mem_read_block(uint8_t* block_mem, uint32_t addr) {
+     uint32_t block_start = (0xFFFFFFFE0 & addr);
+     printf("block_start: %x \n", block_start);
+@@ -677,7 +686,7 @@ uint8_t d_write_cache(d_cache_mem_t* cache_inst, uint32_t addr, uint8_t val) {
+                     set_i->mem_elems[n].lru_sum -= 1;
+                 } 
+             } 
+-            set_i->mem_elems[i].lru_sum = 8;
++            set_i->mem_elems[i].lru_sum = 7;
+             set_i->mem_elems[i].dirty = 1;
+ 
+             status = HIT;
+@@ -738,6 +747,7 @@ int main(int argc, char *argv[]) {
+   printf("MIPS Simulator\n\n");
+ 
+   init_cache();
++  d_init_cache();
+ 
+   initialize(argv[1], argc - 1);
+ 

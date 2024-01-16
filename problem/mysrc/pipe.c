@@ -36,6 +36,8 @@ void pipe_init()
     memset(&pipe, 0, sizeof(Pipe_State));
     pipe.PC = 0x00400000;
     pipe.fetching = 0;
+
+    printf("Starting Pipeline\n");
 }
 
 void pipe_cycle()
@@ -73,7 +75,7 @@ void pipe_cycle()
             pipe.execute_op = NULL;
         }
 
-        if (pipe.branch_flush >= 4) {
+       if (pipe.branch_flush >= 4) {
             if (pipe.mem_op) free(pipe.mem_op);
             pipe.mem_op = NULL;
         }
@@ -142,20 +144,31 @@ void pipe_stage_mem()
     if (!pipe.mem_op)
         return;
 
+    printf("Entered mem\n");
     /* grab the op out of our input slot */
     Pipe_Op *op = pipe.mem_op;
 
     uint32_t val = 0;
-    if (op->is_mem)
-        val = mem_read_32(op->mem_addr & ~3);
+    // if (op->is_mem)
+    //     val = mem_read_32(op->mem_addr & ~3);
 
     switch (op->opcode) {
+        // case 
         case OP_LW:
         case OP_LH:
         case OP_LHU:
         case OP_LB:
         case OP_LBU:
             {
+                if(pipe.mem_stall > 0){ 
+                    pipe.mem_stall--;
+                    return;
+                } else {
+                    val = mem_read_32(op->mem_addr & ~3);
+                    if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
+                }
+
+
                 /* extract needed value */
                 op->reg_dst_value_ready = 1;
                 if (op->opcode == OP_LW) {
@@ -204,7 +217,13 @@ void pipe_stage_mem()
                 case 3: val = (val & 0x00FFFFFF) | ((op->mem_value & 0xFF) << 24); break;
             }
 
-            mem_write_32(op->mem_addr & ~3, val);
+            if(pipe.mem_stall > 0){
+                pipe.mem_stall--;
+                return;
+            } else{
+                mem_write_32(op->mem_addr & ~3, val);
+                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
+            }
             break;
 
         case OP_SH:
@@ -219,12 +238,26 @@ void pipe_stage_mem()
             printf("new word %08x\n", val);
 #endif
 
-            mem_write_32(op->mem_addr & ~3, val);
+            if(pipe.mem_stall > 0){
+                pipe.mem_stall--;
+                return;
+            } else{
+                mem_write_32(op->mem_addr & ~3, val);
+                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
+            }
             break;
 
         case OP_SW:
             val = op->mem_value;
-            mem_write_32(op->mem_addr & ~3, val);
+
+            if(pipe.mem_stall > 0){
+                pipe.mem_stall--;
+                return;
+            } else{
+                mem_write_32(op->mem_addr & ~3, val);
+                if(pipe.mem_stall > 0) { pipe.mem_stall --; return; }
+            }
+
             break;
     }
 
@@ -672,17 +705,21 @@ void pipe_stage_fetch()
     // printf("DEBUG: in fetch stage...\n");
     // #endif
     /* if pipeline is stalled (our output slot is not empty), return */
+    
+
+    if(RUN_BIT == 0) {
+        pipe.PC += 4; return;
+    }
+    
     if (pipe.decode_op != NULL)
         return;
     //TRY FETCH, stall till necessary
-    pipe.fetched_instr = mem_read_32_inst(pipe.PC);
-
-    if (!pipe.fetching && pipe.fetch_stall > 0) {
-        #ifdef DEBUG
-        printf("DEBUG::FETCH: start fetching!\n");
-        #endif
+    if(!pipe.fetching) {
+        pipe.fetched_instr = mem_read_32_inst(pipe.PC);
         pipe.fetching = TRUE;
-    } else if (pipe.fetch_stall > 0) {
+    }
+
+    if (pipe.fetch_stall > 0) {
         #ifdef DEBUG
         printf("DEBUG::FETCH: waiting for fetch stall\n");
         #endif

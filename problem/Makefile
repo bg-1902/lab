@@ -1,6 +1,7 @@
 SRC = $(wildcard src/*.c)
 MYSRC = $(wildcard mysrc/*.c)
-INPUT ?= $(wildcard inputs/*/*.x)
+# INPUT ?= $(wildcard inputs/*/*.x)
+INPUT = ./inputs/inst/add.x
 
 .PHONY: all verify clean
 
@@ -14,6 +15,7 @@ basesim: $(SRC)
 
 run: sim
 	python3 run.py $(INPUT)
+	# cat $(INPUT).cmd | ./sim $(INPUT).x > sim_main.out 
 
 clean:
 	rm -rf *.o *~ sim

@@ -5,6 +5,11 @@
             "cwd": "/home/a0504825/lab1/problem",
             "binaryPath": "/home/a0504825/lab1/problem/sim",
             "binaryArgs": []
+        },
+        {
+            "cwd": "/home/devector/Documents/comp_arch_labs/cache_sim_labs/problem",
+            "binaryPath": "/home/devector/Documents/comp_arch_labs/cache_sim_labs/problem/sim",
+            "binaryArgs": []
         }
     ]
 }
