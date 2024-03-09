@@ -71,12 +71,12 @@ d_cache_mem_t* dcache;
 /***************************************************************/
 uint32_t mem_read_32(uint32_t address)
 {
-    pipe.mem_stall = 50;
+    pipe.mem_stall = DCACHE_MISS_DELAY;
     int status = d_read_cache(dcache, address);
     if(status == HIT) {
-        pipe.fetch_stall = 0;
+        pipe.mem_stall= 0;
     } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
-        pipe.fetch_stall = 50;
+        pipe.mem_stall= DCACHE_MISS_DELAY;
     } else {
         printf("ERROR: invalid status from read_cache! \n");
         return 0;
@@ -93,12 +93,12 @@ uint32_t mem_read_32(uint32_t address)
 /***************************************************************/
 uint32_t mem_read_32_inst(uint32_t address)
 {
-    pipe.fetch_stall = 50;
+    pipe.fetch_stall = ICACHE_MISS_DELAY;
     int status = read_cache(icache, address);
     if(status == HIT) {
         pipe.fetch_stall = 0;
     } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
-        pipe.fetch_stall = 50;
+        pipe.fetch_stall = ICACHE_MISS_DELAY;
     } else {
         printf("ERROR: invalid status from read_cache! \n");
         return 0;
@@ -115,7 +115,7 @@ uint32_t mem_read_32_inst(uint32_t address)
 /***************************************************************/
 void mem_write_32(uint32_t address, uint32_t value)
 {
-    pipe.mem_stall = 50;
+    pipe.mem_stall = DCACHE_MISS_DELAY;
     
     int status = d_write_cache(dcache, address, (uint8_t)(value & 0xff));
     (void)d_write_cache(dcache, address+1, (uint8_t)((value >> 8) & 0xff));
@@ -126,7 +126,7 @@ void mem_write_32(uint32_t address, uint32_t value)
     if(status == HIT) {
         pipe.mem_stall = 0;
     } else if (status == CLEAN_MISS || status == DIRTY_MISS) {
-        pipe.mem_stall = 50;
+        pipe.mem_stall = DCACHE_MISS_DELAY;
     } else {
         printf("ERROR: invalid status from read_cache! \n");
         return;
