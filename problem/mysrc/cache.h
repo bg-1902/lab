@@ -9,6 +9,9 @@
 #define CLEAN_MISS 0b01
 #define HIT 0b00
 
+#define ICACHE_MISS_DELAY 5 
+#define DCACHE_MISS_DELAY 5 
+
 typedef struct {
     uint8_t valid;
     uint8_t dirty;

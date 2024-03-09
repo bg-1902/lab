@@ -5,7 +5,7 @@ INPUT = ./inputs/inst/add.x
 
 .PHONY: all verify clean
 
-all: sim
+all: run 
 
 sim: $(MYSRC)
 	gcc -std=c99 -g -O2 $^ -o $@
@@ -15,7 +15,8 @@ basesim: $(SRC)
 
 run: sim
 	python3 run.py $(INPUT)
-	# cat $(INPUT).cmd | ./sim $(INPUT).x > sim_main.out 
+	# cat $(basename $(INPUT)).cmd | 
+	./sim $(basename $(INPUT)).x > sim_main.out 
 
 clean:
 	rm -rf *.o *~ sim
